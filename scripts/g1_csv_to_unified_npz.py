@@ -58,7 +58,14 @@ import pandas as pd
 import torch
 from scipy.spatial.transform import Rotation
 
-G1_XML = "/nfsdata/home/jungbin.cho/TAP/kimodo/kimodo/assets/skeletons/g1skel34/xml/g1.xml"
+# Resolve the G1 MJCF machine-agnostically: $G1_XML override wins, else the
+# g1skel34 asset shipped in this repo's vendored kimodo (TAP/kimodo). The
+# upstream and kimodo_open copies of this XML are byte-identical, so either is
+# fine. (Avoids the hardcoded /nfsdata Machine-A path.)
+G1_XML = os.environ.get("G1_XML") or str(
+    Path(__file__).resolve().parents[1]
+    / "kimodo/kimodo/assets/skeletons/g1skel34/xml/g1.xml"
+)
 
 # MuJoCo Z-up, X-forward -> Kimodo Y-up, Z-forward (matches
 # kimodo/exports/mujoco.py:_prepare_transforms). For row vectors:

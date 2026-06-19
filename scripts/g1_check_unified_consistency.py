@@ -27,6 +27,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 import numpy as np
@@ -35,7 +36,11 @@ import torch
 from scipy.spatial.transform import Rotation
 
 
-G1_XML = "/nfsdata/home/jungbin.cho/TAP/kimodo/kimodo/assets/skeletons/g1skel34/xml/g1.xml"
+# Machine-agnostic G1 MJCF: $G1_XML override, else the repo's vendored kimodo.
+G1_XML = os.environ.get("G1_XML") or str(
+    Path(__file__).resolve().parents[1]
+    / "kimodo/kimodo/assets/skeletons/g1skel34/xml/g1.xml"
+)
 _M = np.array([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]], dtype=np.float32)
 
 
