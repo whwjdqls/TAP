@@ -1,0 +1,36 @@
+# --- Large data & outputs (never commit) ---
+data/
+runs/
+
+# --- Vendored upstream checkouts (own git history; treat as deps) ---
+GR00T-WholeBodyControl/
+GMT/
+SOMA-X/
+kimodo/
+
+# --- Python build artifacts ---
+*.egg-info/
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+.eggs/
+
+# --- Checkpoints / weights / heavy binaries ---
+*.pt
+*.pth
+*.ckpt
+*.npz
+*.npy
+*.tar
+*.tar.gz
+*.mp4
+
+# --- Caches / editor / OS ---
+.ipynb_checkpoints/
+.DS_Store
+*.swp
+.vscode/
+.idea/
+wandb/

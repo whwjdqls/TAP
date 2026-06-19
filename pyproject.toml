@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tmr_g1"
+version = "0.0.1"
+description = "Text-Motion Retrieval trained on the G1 embodiment from Bones-SEED."
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tmr_g1*"]
