@@ -3,6 +3,81 @@
 Never you login node to do heavy, memory exaustive computation.
 If you need memory heavy cpu work, srun on a CPU and use it. After you are finished always scancel the srun. 
 Also, if you need to debug with GPU, dont sbatch jobs until you are sure that it will work on a GPU. Always srun to a GPU and debug, and then scancel the SRUN and SBATCH it for the real run. If you think you are going to debug on SRUN for several tasks, you can leave the SRUN open. But not too long. MAX 2 hours. 
+## Repository Setup (vendored dependencies)
+
+This repo (`TAP/`) holds **only** the research scaffolding — launch wrappers in
+`scripts/`, the `tmr_g1/` package, and `docs/`. The four upstream repos it
+builds on are **not committed** (they're large, LFS-backed, and have their own
+git history — see `.gitignore`). Clone them as **siblings inside `TAP/`** with
+the exact directory names below; the scripts and `CLAUDE.md` paths assume them.
+
+Conda envs live at `/nfsdata/home/jungbin.cho/miniconda3/envs/`. See `CLAUDE.md`
+for full env package lists and `docs/notes.md` for gotchas referenced below.
+
+```bash
+cd /nfsdata/home/jungbin.cho/TAP   # clone all four as siblings here
+```
+
+### 1) GR00T-WholeBodyControl — SONIC whole-body tracker
+
+```bash
+git clone https://github.com/NVlabs/GR00T-WholeBodyControl
+cd GR00T-WholeBodyControl
+git lfs install && git lfs pull            # LFS assets (git-lfs lives in `base` env)
+# env: env_isaaclab (Python 3.11, torch 2.7.0+cu128, Isaac Lab 2.3.0, Isaac Sim 5.1)
+source /nfsdata/home/jungbin.cho/miniconda3/etc/profile.d/conda.sh
+conda activate env_isaaclab
+pip install -e ./gear_sonic                # editable; pulls the [training] extras
+pip install open3d vector_quantize_pytorch # runtime deps missing from pyproject
+python download_from_hf.py --sample        # released checkpoint + 2 sample motions
+                                           #  (--training for the full Bones-SEED lib + SMPL)
+python check_environment.py --training     # pre-flight check (needs a GPU node)
+```
+
+SONIC runs need a GPU — submit via Slurm, never the login node. Entry points:
+`gear_sonic/{train_agent_trl,eval_agent_trl}.py`. See `CLAUDE.md` → "SONIC".
+
+### 2) GMT — general motion tracker (inference only)
+
+```bash
+git clone https://github.com/zixuan417/humanoid-general-motion-tracking GMT
+# env: gmt (Python 3.8, torch 2.4.1+cu121, MuJoCo 3.2.3, numpy 1.23.0,
+#            mujoco-python-viewer 0.1.4)
+conda activate gmt
+```
+
+Upstream ships the pretrained policy (`assets/pretrained_checkpoints/pretrained.pt`)
+and 8 example motions — **no training/retargeter code released yet**, so this is
+inference-only. **CPU-only on this cluster** (the pinned torch 2.4.1 has no
+Blackwell sm_120 kernels). For headless runs use `scripts/gmt_smoke.py` (it stubs
+the GLFW viewer that `sim2sim.py` otherwise requires). See `docs/notes.md` → GMT.
+
+### 3) kimodo — kinematic planner + motion-rep library
+
+```bash
+git clone https://github.com/nv-tlabs/kimodo
+conda activate kimodo_soma                 # shared env for kimodo + SOMA-X + TMR-G1
+pip install -e ./kimodo
+```
+
+> **Namespace-shadowing trap** (`docs/notes.md` §6): `kimodo/` has both
+> `kimodo/assets.py` and a `kimodo/assets/` dir, so `import kimodo` breaks when
+> the cwd contains a `kimodo/` directory. **Always launch Python from a cwd
+> without one** (e.g. `cd /tmp`). The TMR-G1 sbatch scripts already `cd /tmp`.
+
+### 4) SOMA-X — SOMA parameter generation / retargeting
+
+```bash
+git clone https://github.com/NVlabs/SOMA-X
+conda activate kimodo_soma
+pip install -e .                           # see SOMA-X/requirements.txt
+```
+
+Used to turn Kimodo-generated SOMA parameters into motions for SONIC tracking
+and for the side-by-side render comparisons in `scripts/`.
+
+---
+
 ## 1. Core Research Idea
 
 Recent humanoid motion systems increasingly follow a two-stage paradigm:
