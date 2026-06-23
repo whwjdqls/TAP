@@ -1,0 +1,33 @@
+# MDM one-stage denoiser on g1_rep_v1 (142-D), LLM2Vec (cached) text.
+# Same architecture as kimodo's HumanML3D-native MDM; only motion_rep + text
+# dim differ. _target_ "g1_rep_v1.G1RepV1MotionRep" resolves because the train
+# script runs from kinematic_planner/ (on sys.path).
+_target_: kimodo.model.Kimodo
+num_base_steps: 1000
+cfg_type: separated
+denoiser:
+  _target_: kimodo.model.onestage_denoiser.OnestageDenoiser
+  ckpt_path: ${oc.select:checkpoint_dir, null}/model.safetensors
+  motion_mask_mode: none
+  motion_rep:
+    _target_: g1_rep_v1.G1RepV1MotionRep
+    fps: 20
+    mean_path: /home/jungbin_cho/seed/g1_rep_v1_stats/Mean.npy
+    std_path: /home/jungbin_cho/seed/g1_rep_v1_stats/Std.npy
+    feat_bias: 1.0
+    skeleton:
+      _target_: kimodo.skeleton.G1Skeleton34
+  llm_shape:
+  - 1
+  - 4096
+  use_text_mask: false
+  latent_dim: 512
+  ff_size: 1024
+  num_layers: 8
+  num_heads: 4
+  activation: gelu
+  dropout: 0.1
+  pe_dropout: 0.1
+  norm_first: false
+  num_text_tokens_override: 1
+  input_first_heading_angle: false
