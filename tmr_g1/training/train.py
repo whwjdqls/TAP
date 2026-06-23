@@ -144,6 +144,8 @@ def _write_config(args, out_dir: Path) -> None:
             "sources": ["natural", "single", "multi"],
             "sampler_mode": args.sampler_mode,
             "max_clip_sec": 10.0,
+            "aug_feat_noise_std": args.aug_feat_noise_std,
+            "aug_time_jitter_sec": args.aug_time_jitter_sec,
         },
         "optim": {
             "optimizer": "AdamW",
@@ -226,6 +228,10 @@ def main():
     p.add_argument("--num-layers", type=int, default=6)
     p.add_argument("--num-heads", type=int, default=4)
     p.add_argument("--dropout", type=float, default=0.1)
+    p.add_argument("--aug-feat-noise-std", type=float, default=0.0,
+                   help="train-time additive Gaussian noise (normalized feat space); 0=off")
+    p.add_argument("--aug-time-jitter-sec", type=float, default=0.0,
+                   help="train-time +-jitter on slice start/end boundaries (sec); 0=off")
     p.add_argument("--log-every", type=int, default=100)
     p.add_argument("--ckpt-every", type=int, default=5_000)
     # In-training retrieval eval (content/overview only, for speed).
@@ -269,6 +275,8 @@ def main():
         canonicalize=args.canonicalize,
         sampler_mode=args.sampler_mode,
         feat_root=(args.feat_root or None),
+        aug_feat_noise_std=args.aug_feat_noise_std,
+        aug_time_jitter_sec=args.aug_time_jitter_sec,
     )
     loader = DataLoader(
         dataset, batch_size=args.batch, shuffle=True,
@@ -281,6 +289,11 @@ def main():
         text_emb_cache_path=args.text_emb_cache,
         stats_path=args.stats_path,
         fps=args.fps,
+        latent_dim=args.latent_dim,
+        ff_size=args.ff_size,
+        num_layers=args.num_layers,
+        num_heads=args.num_heads,
+        dropout=args.dropout,
         device=args.device,
     )
     tmr.train(); decoder.train()
