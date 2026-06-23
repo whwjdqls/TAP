@@ -558,3 +558,46 @@ Note: `tmr_g1/model/tmr_model.py`'s module docstring still says "G1Skeleton30"
 in prose — stale comment; the code on line ~89 instantiates `G1Skeleton34`.
 `tmr_g1/data/g1_dataset.py`'s docstring likewise says `posed_joints (T, 30, 3)`
 — also stale; the arrays are `(T, 34, 3)`.
+
+---
+
+## 12. Kinematic planner — `g1_rep_v1` MDM (text→G1 motion)
+
+The TAP planner lives in `kinematic_planner/` (committed). It's a text→motion
+MDM trained on Bones-SEED **G1 GT** in a new rep, `g1_rep_v1`. Full design +
+the fidelity story are in `kinematic_planner/NOTES_g1_rep_v1.md`; CLAUDE.md →
+"Kinematic planner" has the pipeline + paths. Key non-obvious facts:
+
+- **`g1_rep_v1` is 142-D** (NOT a fixed HumanML3D 263): `rot_velocity(1) +
+  lin_velocity(2) + root_height(1) + root_orient_6d(6) + joint_angles(29 qpos)
+  + ric_data(33×3=99) + foot_contacts(4)`. The **6-D `root_orient_6d` was the
+  critical addition** over a first 136-D draft: a yaw-only root lost pelvis
+  pitch/roll and cost up to ~0.2 m on tilted poses (sit/crouch). With the full
+  heading-removed root orientation, decode reproduces the executable G1 pose
+  (root + 29 qpos angles → FK) **exactly (0 m)**; positions (`ric`) round-trip
+  exactly too. Residual vs raw mocap (~0.18 m max on fast arm motions) is the
+  intrinsic 1-DOF-hardware gap (G1 can't roll hands / twist wrists off-axis),
+  present in the GT qpos itself — not a rep error.
+- **Joint angles come from the CSV `_dof` columns** (deg→rad, stride-6 to 20fps),
+  NOT from `local_rot_mats` via `dict_to_qpos` (which has the shoulder
+  projection error, §9.10-adjacent). Root orientation + positions come from the
+  unified NPZ (§9.5). Both are frame-aligned.
+- **Text = LLM2Vec cache** `kimodo_caches/bones_seed_llm2vec_small.pt` (227K
+  captions ≈ the full corpus — the "small" name is misleading; it's the cache
+  the full Bones-SEED MDM run used). Live arbitrary-prompt sampling needs the
+  8B LLM2Vec model (GPU); `build_text_encoder({type:llm2vec})` with no
+  `cache_path`. Cache covers 98% of full-split natural captions.
+- **Trained model**: `runs/mdm_g1_rep_v1_full/ckpt_final.pt`, 200k steps on the
+  full split (125,834 motions / 502,485 caption pairs), loss 1.62→0.046, EMA
+  saved. Sampling (`sample_g1.py`, 50-step CFG DDIM) gives semantically-correct,
+  prompt-distinct motions (walk travels, jump lifts root, sit/crouch drop it,
+  arms raise — verified).
+- **Headless GL is dead on this cluster** (Machine B): the GPU nodes run a
+  **compute-only NVIDIA driver** — no `libEGL_nvidia`, only the mesa EGL ICD,
+  `eglQueryDevices`→0 — so MuJoCo's EGL context fails ("Cannot initialize a EGL
+  device display"); and conda-forge `mesalib` ships **no `libOSMesa`** (its only
+  `.so` is a Vulkan rasterizer), so the osmesa backend has nothing to load.
+  → MuJoCo offscreen render (`render_samples.py`) can't work here in ANY env.
+  Use `render_samples_kimodo.py` (kimodo `render_soma`, pure matplotlib skeleton,
+  CPU). A mesh render needs a node with real graphics libs; the qpos in each
+  `samples/*.npz` is portable to `scripts/render_g1_qpos.py` there.

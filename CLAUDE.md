@@ -38,8 +38,9 @@ The planner, tracker, and trackability critic must stay **independently swappabl
 
 ## Repo layout
 
-This repo (`TAP/`) holds only the research scaffolding that is committed: `scripts/`, the `tmr_g1/` package, `docs/`, `pyproject.toml`. The upstream repos and all data are **gitignored** (large, LFS-backed, own git history — see `.gitignore`) and may or may not be checked out on a given node.
+This repo (`TAP/`) holds only the research scaffolding that is committed: `scripts/`, the `tmr_g1/` + `kinematic_planner/` packages, `docs/`, `pyproject.toml`. The upstream repos and all data are **gitignored** (large, LFS-backed, own git history — see `.gitignore`) and may or may not be checked out on a given node.
 
+- `kinematic_planner/` — **committed**. The TAP **planner**: a from-scratch text→G1-motion **MDM diffusion model** trained on Bones-SEED G1 GT in a new HumanML3D-style representation (`g1_rep_v1`), decoding to executable G1 qpos. This is the generative motion prior the trackability work adapts. See "Kinematic planner" below + `kinematic_planner/NOTES_g1_rep_v1.md`.
 - `tmr_g1/` — **committed, editable-installed package** (`pip install -e .`). A from-scratch **TMR (Text-Motion Retrieval) model trained on the G1 embodiment** from Bones-SEED. This is the project's main original code (the SOMA-trained TMR's training code was never released). Serves as the text-alignment / semantic-preservation critic. See "TMR-G1" below.
 - `scripts/` — user-owned launch wrappers + the data-prep / generation / eval pipeline. **All new harness code goes here**, never inside a vendored repo.
 - `docs/` — `notes.md` (gotchas), `tmr_g1_plan.md`, `tmr_g1_improvement_plan.md`.
@@ -94,6 +95,23 @@ The README §6.1 matrix is run as a per-subset pipeline of `scripts/`. The unit 
 5. **Compare** — `compare_metrics.py` (GT vs Kimodo metric tables) and `render_compare.py` (2×2 side-by-side mp4: Kimodo ref / SONIC-tracking-Kimodo / GT ref / SONIC-tracking-GT).
 
 Text-alignment / semantic preservation is graded separately by **TMR-G1** retrieval (below). Sharding helpers: `shard_subset.py`, `split_pkl_files.py`.
+
+## Kinematic planner: text→G1 motion MDM (`kinematic_planner/`)
+
+The TAP **planner**. An MDM (one-stage diffusion) text→motion model trained on **Bones-SEED G1 GT** in a new representation **`g1_rep_v1`**, generating motion that decodes to **executable G1 qpos** (the input a tracker like SONIC would track). Reuses kimodo's MDM stack by import (`OnestageDenoiser` + `Diffusion` + LLM2Vec `CachedTextEncoder` + flat MDM masked-L2 loss); only the rep, dataset, and configs are new.
+
+- **Rep `g1_rep_v1.py`** (142-D): `rot_velocity(1) + lin_velocity(2) + root_height(1) + root_orient_6d(6) + joint_angles(29, qpos) + ric_data(99) + foot_contacts(4)`. Heading-canonical, heading-invariant. Decode = integrate root → **root + 29 qpos angles → G1 FK**. **Validated lossless**: positions and the executable G1 pose both reconstruct to **0 m**; the residual vs raw mocap is only the G1's intrinsic 1-DOF hardware limit. Full design + the root-orientation fix: `kinematic_planner/NOTES_g1_rep_v1.md`.
+- **Pipeline** (run each from the `kinematic_planner/` dir, `kimodo` env — running `python kinematic_planner/<x>.py` keeps `g1_*` importable while `import kimodo` resolves to the installed `kimodo_open`, sidestepping the namespace trap):
+  1. `build_features.py --split <split> --out-root <feats>` — encode g1_rep_v1 from unified NPZ + CSV angles (multi-worker, a2 CPU).
+  2. `compute_stats.py --feat-root <feats> --out-dir <stats>` — flat Mean/Std.
+  3. `build_text_index.py --split <split> --cache <llm2vec.pt> --out <json>` — natural Bones-SEED captions ∩ LLM2Vec cache (98% coverage).
+  4. `sbatch train_g1_rep_v1.sbatch` — MDM train (Bones-SEED recipe: lr 2e-5, bf16, EMA 0.995, CFG 0.1, batch 128, 200k steps; TensorBoard). Single GPU on a2.
+  5. `sample_g1.py --ckpt <ckpt> --n-steps 50 [--prompts ...]` — text → 50-step CFG DDIM → g1_rep_v1 → joints + **MuJoCo qpos** npz (live LLM2Vec encoder, GPU).
+  6. `render_samples_kimodo.py` — viz via kimodo's `render_soma` (skeleton, matplotlib/CPU — see render caveat).
+- **Data artifacts** (Machine B, under `/home/jungbin_cho/seed/`, **gitignored — rebuild per machine**): `g1_unified_npz/` (the §9.5 unified NPZ), `g1_rep_v1_feats/`, `g1_rep_v1_stats/`, `g1_rep_v1_text_{full,small}.json`. Text cache: `/home/jungbin_cho/kimodo_caches/bones_seed_llm2vec_small.pt` (227K captions, the full-corpus cache despite the name). Splits: `/home/jungbin_cho/Kimodo-Motion-Gen-Benchmark/splits/train_split_paths{,_small,_medium}.txt` (128K / 12.8K / 38.5K).
+- **Trained checkpoint** (Machine B, gitignored): `runs/mdm_g1_rep_v1_full/ckpt_final.pt` (200k steps, full split; loss 1.62→0.046). The other machine must retrain to obtain it.
+- **Machine-A note**: paths are hardcoded to `/home/jungbin_cho/...`; `g1_data.py` honors `$SEED_ROOT`, but the configs + the `G1_XML` in sample/render/test hardcode Machine-B paths — adjust per the "Two machines" table.
+- **Render caveat**: MuJoCo headless GL does **not** work on this cluster (compute-only GPU driver: no `libEGL_nvidia`/NVIDIA EGL ICD → `eglQueryDevices`=0; conda `mesalib` ships no `libOSMesa`). So `render_samples.py` (MuJoCo, EGL/OSMesa) fails here — use **`render_samples_kimodo.py`** (kimodo `render_soma`, pure matplotlib/CPU). A textured-robot mesh render needs a machine with real graphics libs (the qpos in each sample npz is portable to `scripts/render_g1_qpos.py` there).
 
 ## TMR-G1: the from-scratch retrieval model (`tmr_g1/`)
 
