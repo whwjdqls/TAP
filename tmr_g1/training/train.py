@@ -85,6 +85,19 @@ def _cosine_lr(step, warmup, total, base_lr, min_lr=1e-6):
     return min_lr + 0.5 * (base_lr - min_lr) * (1.0 + math.cos(math.pi * p))
 
 
+def _constant_lr(step, warmup, total, base_lr, min_lr=1e-6):
+    """Linear warmup, then hold base_lr flat (no decay)."""
+    if step < warmup:
+        return base_lr * step / max(1, warmup)
+    return base_lr
+
+
+def _lr_at(schedule, step, warmup, total, base_lr):
+    if schedule == "constant":
+        return _constant_lr(step, warmup, total, base_lr)
+    return _cosine_lr(step, warmup, total, base_lr)
+
+
 def _write_config(args, out_dir: Path) -> None:
     """Write a config.json capturing all hyperparameters + model architecture
     + data provenance at the start of the run."""
@@ -136,11 +149,12 @@ def _write_config(args, out_dir: Path) -> None:
             "optimizer": "AdamW",
             "lr": args.lr,
             "weight_decay": args.weight_decay,
-            "lr_schedule": "cosine with warmup",
+            "lr_schedule": f"{args.lr_schedule} with warmup",
+            "lr_total": args.lr_total if args.lr_total > 0 else args.max_steps,
             "warmup": args.warmup,
             "max_steps": args.max_steps,
             "batch": args.batch,
-            "grad_clip": 1.0,
+            "grad_clip": args.grad_clip,
             "seed": args.seed,
         },
         "loss": {
@@ -178,6 +192,11 @@ def main():
     p.add_argument("--max-steps", type=int, default=100_000)
     p.add_argument("--warmup", type=int, default=2_000)
     p.add_argument("--lr", type=float, default=2e-4)
+    p.add_argument("--lr-schedule", default="cosine", choices=["cosine", "constant"],
+                   help="constant = warmup then hold base_lr flat (no decay)")
+    p.add_argument("--lr-total", type=int, default=0,
+                   help="cosine decay horizon; 0 -> use max_steps. Set > max_steps "
+                        "to keep a gentle decay while stopping early.")
     p.add_argument("--weight-decay", type=float, default=1e-2)
     p.add_argument("--lambda-kl", type=float, default=1e-4)
     p.add_argument("--lambda-recon", type=float, default=1.0)
@@ -216,6 +235,7 @@ def main():
     p.add_argument("--eval-text-cache", default="/nfsdata/home/jungbin.cho/TAP/data/bones_seed/eval_text_emb.pt")
     p.add_argument("--device", default="cuda")
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--grad-clip", type=float, default=1.0)
     p.add_argument("--resume-from", default="",
                    help="checkpoint to resume encoder/decoder/optimizer + step")
     args = p.parse_args()
@@ -353,14 +373,16 @@ def main():
                         queue_zm = torch.cat([queue_zm, qm], 0)[-args.queue_size:]
                         queue_zt = torch.cat([queue_zt, qt], 0)[-args.queue_size:]
 
-            # LR schedule.
-            lr = _cosine_lr(step, args.warmup, args.max_steps, args.lr)
+            # LR schedule. lr_total decouples the cosine horizon from max_steps
+            # so we can stop early while keeping a gentle (e.g. 200k) decay.
+            lr_total = args.lr_total if args.lr_total > 0 else args.max_steps
+            lr = _lr_at(args.lr_schedule, step, args.warmup, lr_total, args.lr)
             for g in opt.param_groups:
                 g["lr"] = lr
 
             opt.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(params, 1.0)
+            torch.nn.utils.clip_grad_norm_(params, args.grad_clip)
             opt.step()
             step += 1
 

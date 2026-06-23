@@ -161,6 +161,17 @@ def eval_group(tmr, motion_rep, args, split, grp):
 
     motion_embs = np.stack(motion_embs)
     text_embs = np.stack(text_embs)
+
+    # Collapse guard: posterior-collapsed encoders give near-constant
+    # embeddings, which makes compute_tmr_retrieval_metrics report a fake 100%
+    # (nothing strictly beats the diagonal in a constant similarity matrix).
+    m_std = float(np.linalg.norm(motion_embs.std(0)))
+    t_std = float(np.linalg.norm(text_embs.std(0)))
+    if min(m_std, t_std) < 1e-4 or not np.isfinite([m_std, t_std]).all():
+        return {"COLLAPSED": True, "motion_emb_std": m_std, "text_emb_std": t_std,
+                "R@1": 0.0, "R@2": 0.0, "R@3": 0.0, "R@5": 0.0, "R@10": 0.0,
+                "MedR": float("nan"), "pool": kept, "missing": miss}
+
     metrics = compute_tmr_retrieval_metrics(motion_embs, text_embs)
     # Pull just the t2m retrieval keys.
     out = {k.replace("TMR/t2m_R/", ""): v for k, v in metrics.items() if k.startswith("TMR/t2m_R/")}

@@ -113,6 +113,17 @@ class GroupEvaluator:
             tmr.train()
         motion_emb = torch.cat(m_emb).numpy()
         text_emb = torch.cat(t_emb).numpy()
+
+        # Collapse guard: if the encoders degenerate (posterior collapse ->
+        # near-constant embeddings), the similarity matrix is constant and
+        # compute_tmr_retrieval_metrics returns a *fake* 100% (nothing strictly
+        # beats the diagonal). Detect it and report 0 instead of being fooled.
+        m_std = float(np.linalg.norm(motion_emb.std(0)))
+        t_std = float(np.linalg.norm(text_emb.std(0)))
+        if min(m_std, t_std) < 1e-4 or not np.isfinite([m_std, t_std]).all():
+            return {"COLLAPSED": 1.0, "motion_emb_std": m_std, "text_emb_std": t_std,
+                    "R@1": 0.0, "R@2": 0.0, "R@3": 0.0, "R@5": 0.0, "R@10": 0.0}
+
         metrics = compute_tmr_retrieval_metrics(motion_emb, text_emb)
         return {k.replace("TMR/t2m_R/", ""): v
                 for k, v in metrics.items() if k.startswith("TMR/t2m_R/")}
