@@ -12,8 +12,8 @@
 set -eo pipefail
 echo "Job ${SLURM_JOB_ID:-local} on $(hostname) at $(date)"
 
-source /nfsdata/home/jungbin.cho/miniconda3/etc/profile.d/conda.sh
-conda activate kimodo_soma
+source /lab-vision/human_motion/jungbin.cho/miniconda3/etc/profile.d/conda.sh
+conda activate /nfsdata/home/jungbin.cho/miniconda3.broken/envs/kimodo_soma
 cd /tmp
 
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
